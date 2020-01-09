@@ -288,7 +288,7 @@ import sun.misc.Unsafe;
  */
 
 /**
- * 开始搞事情
+ * 开始搞事情v2.0
  */
 public abstract class AbstractQueuedSynchronizer
     extends AbstractOwnableSynchronizer
