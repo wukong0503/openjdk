@@ -288,7 +288,9 @@ import sun.misc.Unsafe;
  */
 
 /**
- * 开始搞事情v2.0
+ * 参考：
+ * http://www.iocoder.cn/JUC/sike/aqs-1-clh/
+ * https://javadoop.com/post/AbstractQueuedSynchronizer
  */
 public abstract class AbstractQueuedSynchronizer
     extends AbstractOwnableSynchronizer
@@ -381,17 +383,26 @@ public abstract class AbstractQueuedSynchronizer
      * expert group, for helpful ideas, discussions, and critiques
      * on the design of this class.
      */
+    // Node的数据结构，thread + waitStatus + pre + next 四个属性
     static final class Node {
         /** Marker to indicate a node is waiting in shared mode */
+        // 表示节点当前在共享模式下
         static final Node SHARED = new Node();
         /** Marker to indicate a node is waiting in exclusive mode */
+        // 标识节点当前在独占模式下
         static final Node EXCLUSIVE = null;
 
+        // ======== 下面的几个int常量是给waitStatus用的 ===========
         /** waitStatus value to indicate thread has cancelled */
+        // 因为超时或者中断，此线程取消了锁的争抢
         static final int CANCELLED =  1;
         /** waitStatus value to indicate successor's thread needs unparking */
+        // 标识当前node的后继节点对应的线程需要被唤醒
+        // 后继节点的线程处于等待状态，当前节点的线程如果释放了同步状态或者被取消，将会通知后继节点，使后继节点的线程得以运行
         static final int SIGNAL    = -1;
         /** waitStatus value to indicate thread is waiting on condition */
+        // 节点在等待队列中，节点线程等待在Condition上，
+        // 当其他线程对Condition调用了signal()后，改节点将会从等待队列转移到同步队列中，加入到同步状态的获取中
         static final int CONDITION = -2;
         /**
          * waitStatus value to indicate the next acquireShared should
@@ -433,6 +444,7 @@ public abstract class AbstractQueuedSynchronizer
          * CONDITION for condition nodes.  It is modified using CAS
          * (or when possible, unconditional volatile writes).
          */
+        // 等待状态
         volatile int waitStatus;
 
         /**
@@ -446,6 +458,7 @@ public abstract class AbstractQueuedSynchronizer
          * cancelled thread never succeeds in acquiring, and a thread only
          * cancels itself, not any other node.
          */
+        // 前驱节点的引用
         volatile Node prev;
 
         /**
@@ -461,12 +474,14 @@ public abstract class AbstractQueuedSynchronizer
          * point to the node itself instead of null, to make life
          * easier for isOnSyncQueue.
          */
+        // 后继节点的引用
         volatile Node next;
 
         /**
          * The thread that enqueued this node.  Initialized on
          * construction and nulled out after use.
          */
+        // 线程
         volatile Thread thread;
 
         /**
@@ -479,6 +494,7 @@ public abstract class AbstractQueuedSynchronizer
          * we save a field by using special value to indicate shared
          * mode.
          */
+        // 用户实现条件队列的单向链表
         Node nextWaiter;
 
         /**
@@ -523,18 +539,28 @@ public abstract class AbstractQueuedSynchronizer
      * If head exists, its waitStatus is guaranteed not to be
      * CANCELLED.
      */
+    // [属性1]  头结点（可以直接理解为：当前持有锁的线程）
     private transient volatile Node head;
 
     /**
      * Tail of the wait queue, lazily initialized.  Modified only via
      * method enq to add new wait node.
      */
+    // [属性2]  阻塞的尾节点
     private transient volatile Node tail;
 
     /**
      * The synchronization state.
      */
+    // [属性3] 代表当前锁的状态，0代表没有被占用，大于0代表有线程持有当前锁
+    // 这个值可以大于1，因为锁可以重入，每次重入都加上1
     private volatile int state;
+
+
+    // [属性4] 在父类 AbstractOwnableSynchronizer 中, 代表当前持有独占锁的线程
+    // 因为锁可以重入，reentrantLock.lock()可以嵌套调用多次，
+    // 所以每次用这个来判断当前线程是否已经拥有了锁
+    // private transient Thread exclusiveOwnerThread;
 
     /**
      * Returns the current value of synchronization state.

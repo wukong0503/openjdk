@@ -113,6 +113,7 @@ public class ReentrantLock implements Lock, java.io.Serializable {
      * into fair and nonfair versions below. Uses AQS state to
      * represent the number of holds on the lock.
      */
+    // 内部静态类，实现 AbstractQueuedSynchronizer 的同步器抽象类
     abstract static class Sync extends AbstractQueuedSynchronizer {
         private static final long serialVersionUID = -5179523762034025860L;
 
@@ -120,15 +121,18 @@ public class ReentrantLock implements Lock, java.io.Serializable {
          * Performs {@link Lock#lock}. The main reason for subclassing
          * is to allow fast path for nonfair version.
          */
+        // 抽象了改方法的原因是，允许子类实现快速实现*非公平锁*的逻辑
         abstract void lock();
 
         /**
          * Performs non-fair tryLock.  tryAcquire is implemented in
          * subclasses, but both need nonfair try for trylock method.
          */
+        // *非公平锁*的方式获取锁
         final boolean nonfairTryAcquire(int acquires) {
             final Thread current = Thread.currentThread();
             int c = getState();
+            // state == 0，表示该锁处于空闲状态
             if (c == 0) {
                 if (compareAndSetState(0, acquires)) {
                     setExclusiveOwnerThread(current);
@@ -145,6 +149,7 @@ public class ReentrantLock implements Lock, java.io.Serializable {
             return false;
         }
 
+        // 释放锁
         protected final boolean tryRelease(int releases) {
             int c = getState() - releases;
             if (Thread.currentThread() != getExclusiveOwnerThread())
