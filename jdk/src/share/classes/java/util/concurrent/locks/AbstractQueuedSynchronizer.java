@@ -611,12 +611,15 @@ public abstract class AbstractQueuedSynchronizer
      * @return node's predecessor
      */
     private Node enq(final Node node) {
+        // 自旋
         for (;;) {
             Node t = tail;
+            // 原尾节点不存在，创建首尾节点都为 new Node()
             if (t == null) { // Must initialize
                 if (compareAndSetHead(new Node()))
                     tail = head;
             } else {
+                // 同 addWaiter()
                 node.prev = t;
                 if (compareAndSetTail(t, node)) {
                     t.next = node;
@@ -632,17 +635,26 @@ public abstract class AbstractQueuedSynchronizer
      * @param mode Node.EXCLUSIVE for exclusive, Node.SHARED for shared
      * @return the new node
      */
+    // 入队，考虑并发情况。通过CAS的方式，来保证正确的添加Node。
     private Node addWaiter(Node mode) {
         Node node = new Node(Thread.currentThread(), mode);
         // Try the fast path of enq; backup to full enq on failure
+        // 记录原尾节点
         Node pred = tail;
+        // 快速尝试，添加新节点为尾节点
         if (pred != null) {
+            // 1、设置新节点的前驱节点为原尾节点
             node.prev = pred;
+            // 2、CAS设置新的尾节点
             if (compareAndSetTail(pred, node)) {
+                // 3、原尾节点的后继节点为新节点
                 pred.next = node;
                 return node;
             }
         }
+        // 两种情况
+        // 1、首节点未初始化时，head和tail都为空
+        // 2、尾节点非空，因为并发造成添加失败之后
         enq(node);
         return node;
     }
@@ -2300,6 +2312,7 @@ public abstract class AbstractQueuedSynchronizer
                 (AbstractQueuedSynchronizer.class.getDeclaredField("state"));
             headOffset = unsafe.objectFieldOffset
                 (AbstractQueuedSynchronizer.class.getDeclaredField("head"));
+            // unsafe.objectFieldOffset() 用于获取某个字段相对Java对象的"起始地址"的偏移量
             tailOffset = unsafe.objectFieldOffset
                 (AbstractQueuedSynchronizer.class.getDeclaredField("tail"));
             waitStatusOffset = unsafe.objectFieldOffset
@@ -2314,6 +2327,7 @@ public abstract class AbstractQueuedSynchronizer
      * CAS head field. Used only by enq.
      */
     private final boolean compareAndSetHead(Node update) {
+        // expected 为 null，代表需要原 head 为空才可以设置
         return unsafe.compareAndSwapObject(this, headOffset, null, update);
     }
 
