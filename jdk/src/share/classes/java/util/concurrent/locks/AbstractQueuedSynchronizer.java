@@ -291,6 +291,7 @@ import sun.misc.Unsafe;
  * 参考：
  * http://www.iocoder.cn/JUC/sike/aqs-1-clh/
  * https://javadoop.com/post/AbstractQueuedSynchronizer
+ * https://www.iteye.com/blog/donald-draper-2360256
  */
 public abstract class AbstractQueuedSynchronizer
     extends AbstractOwnableSynchronizer
@@ -785,10 +786,11 @@ public abstract class AbstractQueuedSynchronizer
         // Ignore if node doesn't exist
         if (node == null)
             return;
-
+        // 将节点的等待线程置空
         node.thread = null;
 
         // Skip cancelled predecessors
+        // 当前节点的前驱节点，跳过waitStatus>0的节点
         Node pred = node.prev;
         while (pred.waitStatus > 0)
             node.prev = pred = pred.prev;
@@ -796,31 +798,43 @@ public abstract class AbstractQueuedSynchronizer
         // predNext is the apparent node to unsplice. CASes below will
         // fail if not, in which case, we lost race vs another cancel
         // or signal, so no further action is necessary.
+        // predNext 从表面上看，和 node 是等价的
+        // 但是实际上，存在多线程并发的情况
         Node predNext = pred.next;
 
         // Can use unconditional write instead of CAS here.
         // After this atomic step, other Nodes can skip past us.
         // Before, we are free of interference from other threads.
+        // 设置节点等待状态
         node.waitStatus = Node.CANCELLED;
 
         // If we are the tail, remove ourselves.
+
+        // 先处理好处理的情况
+        // 如果当前节点是尾节点，cas设置前驱节点为新的尾节点
         if (node == tail && compareAndSetTail(node, pred)) {
+            // 如果设置尾节点成功，设置pred的下一个节点为空
             compareAndSetNext(pred, predNext, null);
         } else {
             // If successor needs signal, try to set pred's next-link
             // so it will get one. Otherwise wake it up to propagate.
+            // 前驱节点的等待状态
             int ws;
-            if (pred != head &&
-                ((ws = pred.waitStatus) == Node.SIGNAL ||
-                 (ws <= 0 && compareAndSetWaitStatus(pred, ws, Node.SIGNAL))) &&
-                pred.thread != null) {
-                Node next = node.next;
-                if (next != null && next.waitStatus <= 0)
+
+            if (pred != head && // 1. 如果当前节点的前驱节点不是头结点
+                ((ws = pred.waitStatus) == Node.SIGNAL || // 1. 前驱节点的等待状态为Node.SIGNAL(后继节点需要被唤起)
+                 (ws <= 0 && compareAndSetWaitStatus(pred, ws, Node.SIGNAL))) && // 或者可被cas为Node.SIGNAL
+                pred.thread != null) { // 3. 并且前驱节点的线程不为null，这个地方pred.thread为什么可能为null？！
+                                       // 一开始 pred != head，到当前这个判断的时候，因为并发，pred被设置为头结点了
+                Node next = node.next; // 当前节点为什么会存在后继节点？
+                if (next != null && next.waitStatus <= 0) // 当前节点的后继节点非空，且等待状态非 Node.CANCELLED
                     compareAndSetNext(pred, predNext, next);
             } else {
+                // TODO 唤醒后继节点的线程等待
+                // unpark 解除暂止，启动
                 unparkSuccessor(node);
             }
-
+            // TODO 为啥 node.next = node, 查看next的注释
             node.next = node; // help GC
         }
     }
@@ -834,6 +848,7 @@ public abstract class AbstractQueuedSynchronizer
      * @param node the node
      * @return {@code true} if thread should block
      */
+    // 判断当前线程是否需要阻塞等待
     private static boolean shouldParkAfterFailedAcquire(Node pred, Node node) {
         int ws = pred.waitStatus;
         if (ws == Node.SIGNAL)
@@ -896,14 +911,19 @@ public abstract class AbstractQueuedSynchronizer
      * @param arg the acquire argument
      * @return {@code true} if interrupted while waiting
      */
+    // 自旋，直到获取同步状态成功
     final boolean acquireQueued(final Node node, int arg) {
+        // 记录是否需要继续获取同步状态，只有前驱节点是头结点并且获取同步状态成功，才不需要继续
         boolean failed = true;
         try {
+            // 记录自旋过程中是否发生线程中断
             boolean interrupted = false;
             for (;;) {
+                // 当前节点的前驱节点
                 final Node p = node.predecessor();
+                // 前驱节点是头结点，且获取同步状态成功
                 if (p == head && tryAcquire(arg)) {
-                    setHead(node);
+                    setHead(node); // 设置当前节点为头结点
                     p.next = null; // help GC
                     failed = false;
                     return interrupted;
@@ -922,6 +942,7 @@ public abstract class AbstractQueuedSynchronizer
      * Acquires in exclusive interruptible mode.
      * @param arg the acquire argument
      */
+    // 与acquireQueued区别：方法声明抛出异常；在中断方法处不再是使用 interrupted 标志，而是直接抛出异常
     private void doAcquireInterruptibly(int arg)
         throws InterruptedException {
         final Node node = addWaiter(Node.EXCLUSIVE);
@@ -956,23 +977,30 @@ public abstract class AbstractQueuedSynchronizer
             throws InterruptedException {
         if (nanosTimeout <= 0L)
             return false;
+        // 计算截止时间
         final long deadline = System.nanoTime() + nanosTimeout;
+        // 加入同步队列
         final Node node = addWaiter(Node.EXCLUSIVE);
         boolean failed = true;
         try {
             for (;;) {
                 final Node p = node.predecessor();
+                // 主操作，获取同步状态
                 if (p == head && tryAcquire(arg)) {
                     setHead(node);
                     p.next = null; // help GC
                     failed = false;
                     return true;
                 }
+                // 重现计算最大等待时间
                 nanosTimeout = deadline - System.nanoTime();
                 if (nanosTimeout <= 0L)
+                    // 超时返回false
                     return false;
+                // 如果没有超时，等待 nanosTimeout 纳秒
                 if (shouldParkAfterFailedAcquire(p, node) &&
-                    nanosTimeout > spinForTimeoutThreshold)
+                    nanosTimeout > spinForTimeoutThreshold) // 意思就是，如果 nanosTimeout <= spinForTimeoutThreshold，自旋好了
+                    // LockSupport 为JUC提供的一个阻塞和唤醒的工具类
                     LockSupport.parkNanos(this, nanosTimeout);
                 if (Thread.interrupted())
                     throw new InterruptedException();
@@ -1087,6 +1115,10 @@ public abstract class AbstractQueuedSynchronizer
     }
 
     // Main exported methods
+    /**
+     * AQS采用模板方法模式，子类通过继承的方式，实现它的抽象方法来管理同步状态。
+     * AQS提供了大量的模板方法来实现同步
+     */
 
     /**
      * Attempts to acquire in exclusive mode. This method should query
@@ -1114,6 +1146,7 @@ public abstract class AbstractQueuedSynchronizer
      *         correctly.
      * @throws UnsupportedOperationException if exclusive mode is not supported
      */
+    // 需要子类自己实现，该方法必须保证线程安全的获取同步状态
     protected boolean tryAcquire(int arg) {
         throw new UnsupportedOperationException();
     }
@@ -1236,9 +1269,14 @@ public abstract class AbstractQueuedSynchronizer
      *        {@link #tryAcquire} but is otherwise uninterpreted and
      *        can represent anything you like.
      */
+    // 独占式
+    // 获取同步状态
+    // -- 该方法对中断不敏感，也就是说，如果线程获取同步状态失败而加入到CLH同步队列中，
+    // -- 后续对该线程进行中断操作时，线程不会从CLH同步队列中移除
     public final void acquire(int arg) {
-        if (!tryAcquire(arg) &&
-            acquireQueued(addWaiter(Node.EXCLUSIVE), arg))
+        // 获取同步状态失败 && 线程发生中断（加入同步队列尾部）
+        if (!tryAcquire(arg) && // 尝试获取同步状态
+            acquireQueued(addWaiter(Node.EXCLUSIVE), arg)) // 获取同步状态失败，则addWaiter添加到同步队列尾部
             selfInterrupt();
     }
 
@@ -1256,11 +1294,13 @@ public abstract class AbstractQueuedSynchronizer
      *        can represent anything you like.
      * @throws InterruptedException if the current thread is interrupted
      */
+    // 为了响应中断，该方法在等待获取同步状态时，如果当前线程被中断了，会立即响应中断，抛出 InterruptedException 。
     public final void acquireInterruptibly(int arg)
             throws InterruptedException {
-        if (Thread.interrupted())
+        if (Thread.interrupted()) // 校验是否已经中断
             throw new InterruptedException();
-        if (!tryAcquire(arg))
+        if (!tryAcquire(arg)) // 尝试获取同步状态
+            // 自旋直到获得同步状态成功，或线程中断抛出异常
             doAcquireInterruptibly(arg);
     }
 
@@ -1301,8 +1341,10 @@ public abstract class AbstractQueuedSynchronizer
      */
     public final boolean release(int arg) {
         if (tryRelease(arg)) {
-            Node h = head;
-            if (h != null && h.waitStatus != 0)
+            Node h = head; // 获得当前的 head，避免并发问题！
+            if (h != null && h.waitStatus != 0) // 头结点不为null && 头结点等待状态不为0（未初始化）
+                // 为什么会出现 waitStatus=0 的情况？
+                // 唤醒下一个节点的线程等待
                 unparkSuccessor(h);
             return true;
         }
