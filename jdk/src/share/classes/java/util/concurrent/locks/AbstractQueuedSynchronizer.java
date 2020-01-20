@@ -684,6 +684,7 @@ public abstract class AbstractQueuedSynchronizer
          * to clear in anticipation of signalling.  It is OK if this
          * fails or if status is changed by waiting thread.
          */
+        // 当前节点状态
         int ws = node.waitStatus;
         if (ws < 0)
             compareAndSetWaitStatus(node, ws, 0);
@@ -694,9 +695,15 @@ public abstract class AbstractQueuedSynchronizer
          * traverse backwards from tail to find the actual
          * non-cancelled successor.
          */
+        // 当前节点的后继节点
         Node s = node.next;
+        // 后继节点为null或者其状态 > 0 (超时或者被中断了)
         if (s == null || s.waitStatus > 0) {
             s = null;
+            // 从tail尾节点开始查找可用节点，找到最前面的节点
+            // 为何是从 tail 尾节点开始，而不是从 node.next 开始
+            // 原因在于，取消的 node.next.next 指向的是 node.next 自己。如果顺序遍历下去，会导致死循环。
+            // cancelAcquire(Node node)
             for (Node t = tail; t != null && t != node; t = t.prev)
                 if (t.waitStatus <= 0)
                     s = t;
@@ -889,8 +896,11 @@ public abstract class AbstractQueuedSynchronizer
      *
      * @return {@code true} if interrupted
      */
+    // 阻塞当前线程
     private final boolean parkAndCheckInterrupt() {
+        // 挂起当前线程，此时就进入了阻塞等待唤醒的状态
         LockSupport.park(this);
+        // 返回当前线程是否被打断
         return Thread.interrupted();
     }
 
