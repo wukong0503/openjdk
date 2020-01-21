@@ -117,9 +117,21 @@ import sun.misc.Unsafe;
  *   }
  * }}</pre>
  */
+// 线程阻塞工具类
+// park和unpark其实实现了wait和notify的功能，不过有一些区别
+//    1. park不需要获取对象的锁, LockSupport不需要在同步代码块里。所以线程间也不需要维护一个共享的同步对象了，实现了线程间的解耦。
+//    2. 因为中断的时候park不会抛出InterruptedException异常，
+//       所以需要在park之后自行判断中断状态，然后做额外的处理。
+
+// 每个线程都有一个许可(permit)，permit只有两个值1和0，默认是0。
+//    1. 当调用unpark(thread)方法，就会将thread线程的许可permit设置成1(注意多次调用unpark方法，不会累加，permit值还是1)。
+//    2. 当调用park()方法，如果当前线程的permit是1，那么将permit设置为0，并立即返回。
+//       如果当前线程的permit是0，那么当前线程就会阻塞，直到别的线程将当前线程的permit设置为1时，
+//       park方法会被唤醒，然后会将permit再次设置为0，并返回。
 public class LockSupport {
     private LockSupport() {} // Cannot be instantiated.
 
+    // blocker: 方便在线程dump的时候看到具体的阻塞对象的信息。
     private static void setBlocker(Thread t, Object arg) {
         // Even though volatile, hotspot doesn't need a write barrier here.
         UNSAFE.putObject(t, parkBlockerOffset, arg);
@@ -171,8 +183,11 @@ public class LockSupport {
      */
     public static void park(Object blocker) {
         Thread t = Thread.currentThread();
+        // 设置线程的blocker对象
         setBlocker(t, blocker);
+        // 挂起线程
         UNSAFE.park(false, 0L);
+        // 线程被唤醒之后，清除blocker
         setBlocker(t, null);
     }
 
