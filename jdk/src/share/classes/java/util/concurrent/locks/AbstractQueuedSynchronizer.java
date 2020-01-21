@@ -1578,6 +1578,8 @@ public abstract class AbstractQueuedSynchronizer
      * thread.  Likewise, it is possible for another thread to win a
      * race to enqueue after this method has returned {@code false},
      * due to the queue being empty.
+     * 因为中断或者超时引起的取消可能随时发生，返回true并不能保证其他线程在当前线程之前获取锁。
+     * 同样，如果同步队列为空，此方法返回false之后，另一个线程可以能赢得竞争。
      *
      * <p>This method is designed to be used by a fair synchronizer to
      * avoid <a href="AbstractQueuedSynchronizer#barging">barging</a>.
@@ -1587,6 +1589,7 @@ public abstract class AbstractQueuedSynchronizer
      * (unless this is a reentrant acquire).  For example, the {@code
      * tryAcquire} method for a fair, reentrant, exclusive mode
      * synchronizer might look like this:
+     * 这个方法被设计用户实现公平锁
      *
      *  <pre> {@code
      * protected boolean tryAcquire(int arg) {
@@ -1605,6 +1608,9 @@ public abstract class AbstractQueuedSynchronizer
      *         is at the head of the queue or the queue is empty
      * @since 1.7
      */
+    // 如果当前线程之前还有线程等待就会返回true，
+    // 如果当前节点是头结点，或者当前队列为空就会返回false。
+    // 非公平锁没有这句话的判断，所以直接去竞争锁。
     public final boolean hasQueuedPredecessors() {
         // The correctness of this depends on head being initialized
         // before tail and on head.next being accurate if the current
@@ -1612,6 +1618,8 @@ public abstract class AbstractQueuedSynchronizer
         Node t = tail; // Read fields in reverse initialization order
         Node h = head;
         Node s;
+        // 头尾节点不相等 并且
+        // （同步队列第一个节点为空 或者 当前线程不等于第一个节点）
         return h != t &&
             ((s = h.next) == null || s.thread != Thread.currentThread());
     }

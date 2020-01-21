@@ -103,6 +103,7 @@ import java.util.Collection;
  * @since 1.5
  * @author Doug Lea
  */
+// ReentrantLock是独占获取同步状态的模式
 public class ReentrantLock implements Lock, java.io.Serializable {
     private static final long serialVersionUID = 7373984872572414699L;
     /** Synchronizer providing all implementation mechanics */
@@ -139,6 +140,7 @@ public class ReentrantLock implements Lock, java.io.Serializable {
                     return true;
                 }
             }
+            // 线程重入
             else if (current == getExclusiveOwnerThread()) {
                 int nextc = c + acquires;
                 if (nextc < 0) // overflow
@@ -149,13 +151,14 @@ public class ReentrantLock implements Lock, java.io.Serializable {
             return false;
         }
 
-        // 释放锁
+        // 释放锁，两个操作：扣减state+设置独占线程为null
         protected final boolean tryRelease(int releases) {
             int c = getState() - releases;
             if (Thread.currentThread() != getExclusiveOwnerThread())
                 throw new IllegalMonitorStateException();
             boolean free = false;
             if (c == 0) {
+                // 重入的情况下 需要多次释放
                 free = true;
                 setExclusiveOwnerThread(null);
             }
@@ -163,12 +166,13 @@ public class ReentrantLock implements Lock, java.io.Serializable {
             return free;
         }
 
+        // 是否当前线程独占，一般情况调用该方法之前需要先判断state是否为0
         protected final boolean isHeldExclusively() {
             // While we must in general read state before owner,
             // we don't need to do so to check if current thread is owner
             return getExclusiveOwnerThread() == Thread.currentThread();
         }
-
+        // 生成新的条件
         final ConditionObject newCondition() {
             return new ConditionObject();
         }
@@ -190,6 +194,7 @@ public class ReentrantLock implements Lock, java.io.Serializable {
         /**
          * Reconstitutes the instance from a stream (that is, deserializes it).
          */
+        // 自定义反序列化逻辑。。。。。。
         private void readObject(java.io.ObjectInputStream s)
             throws java.io.IOException, ClassNotFoundException {
             s.defaultReadObject();
@@ -209,6 +214,7 @@ public class ReentrantLock implements Lock, java.io.Serializable {
          */
         final void lock() {
             if (compareAndSetState(0, 1))
+                // 如果抢到锁，则不需要入同步队列，体现出非公平性
                 setExclusiveOwnerThread(Thread.currentThread());
             else
                 acquire(1);
@@ -221,6 +227,7 @@ public class ReentrantLock implements Lock, java.io.Serializable {
 
     /**
      * Sync object for fair locks
+     * 公平锁
      */
     static final class FairSync extends Sync {
         private static final long serialVersionUID = -3000897897090466540L;
@@ -237,6 +244,7 @@ public class ReentrantLock implements Lock, java.io.Serializable {
             final Thread current = Thread.currentThread();
             int c = getState();
             if (c == 0) {
+                // 与非公平锁的区别就是，获取锁之前会判断同步队列中是否还有别的线程等待
                 if (!hasQueuedPredecessors() &&
                     compareAndSetState(0, acquires)) {
                     setExclusiveOwnerThread(current);
